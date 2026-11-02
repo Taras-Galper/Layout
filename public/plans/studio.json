@@ -1,0 +1,180 @@
+{
+ "schema": "walkabout.plan",
+ "version": 1,
+ "units": "m",
+ "name": "Studio with angled bathroom",
+ "north": 0,
+ "source": {
+  "kind": "drawn"
+ },
+ "levels": [
+  {
+   "id": "L0",
+   "name": "Apartment",
+   "elevation": 0,
+   "height": 2.6,
+   "slabThickness": 0.2,
+   "nodes": [
+    {
+     "id": "s1",
+     "x": 0,
+     "y": 0
+    },
+    {
+     "id": "s2",
+     "x": 7,
+     "y": 0
+    },
+    {
+     "id": "s3",
+     "x": 7,
+     "y": 6
+    },
+    {
+     "id": "s4",
+     "x": 2.4,
+     "y": 6
+    },
+    {
+     "id": "s5",
+     "x": 0,
+     "y": 6
+    },
+    {
+     "id": "s6",
+     "x": 0,
+     "y": 4
+    },
+    {
+     "id": "s7",
+     "x": 1.8,
+     "y": 4
+    },
+    {
+     "id": "s8",
+     "x": 2.4,
+     "y": 4.6
+    }
+   ],
+   "walls": [
+    {
+     "id": "e1",
+     "a": "s1",
+     "b": "s2",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "e2",
+     "a": "s2",
+     "b": "s3",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "e3",
+     "a": "s3",
+     "b": "s4",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "e4",
+     "a": "s4",
+     "b": "s5",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "e5",
+     "a": "s5",
+     "b": "s6",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "e6",
+     "a": "s6",
+     "b": "s1",
+     "thickness": 0.25,
+     "kind": "exterior"
+    },
+    {
+     "id": "b1",
+     "a": "s6",
+     "b": "s7",
+     "thickness": 0.08,
+     "kind": "partition"
+    },
+    {
+     "id": "b2",
+     "a": "s7",
+     "b": "s8",
+     "thickness": 0.08,
+     "kind": "partition"
+    },
+    {
+     "id": "b3",
+     "a": "s8",
+     "b": "s4",
+     "thickness": 0.08,
+     "kind": "partition"
+    }
+   ],
+   "openings": [
+    {
+     "id": "d-entry",
+     "wall": "e3",
+     "offset": 1.2,
+     "width": 0.95,
+     "kind": "entry",
+     "hinge": "start",
+     "swing": "left"
+    },
+    {
+     "id": "w-south",
+     "wall": "e1",
+     "offset": 3.8,
+     "width": 2.4,
+     "kind": "window",
+     "sill": 0.6
+    },
+    {
+     "id": "w-east",
+     "wall": "e2",
+     "offset": 3.0,
+     "width": 1.2,
+     "kind": "window"
+    },
+    {
+     "id": "d-bath",
+     "wall": "b3",
+     "offset": 0.7,
+     "width": 0.7,
+     "kind": "door",
+     "hinge": "start",
+     "swing": "left"
+    }
+   ],
+   "rooms": [
+    {
+     "id": "studio",
+     "type": "living",
+     "at": [
+      4.5,
+      2.5
+     ],
+     "name": "Studio"
+    },
+    {
+     "id": "bath",
+     "type": "bathroom",
+     "at": [
+      1.0,
+      5.0
+     ]
+    }
+   ]
+  }
+ ]
+}

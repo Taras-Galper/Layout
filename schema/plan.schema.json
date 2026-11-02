@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Taras-Galper/Layout/schema/plan.schema.json",
+  "title": "Layout plan",
+  "description": "Floor plan model shared by the importers, the 2D editor and the 3D builder. See docs/plan-model.md.",
+  "type": "object",
+  "required": ["schema", "version", "units", "name", "levels"],
+  "properties": {
+    "schema": { "const": "walkabout.plan" },
+    "version": { "const": 1 },
+    "units": { "const": "m" },
+    "name": { "type": "string" },
+    "north": { "type": "number", "description": "Angle of true north, clockwise from plan +y, degrees." },
+    "source": { "$ref": "#/$defs/source" },
+    "levels": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/level" } },
+    "meta": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": { "type": "string", "minLength": 1 },
+    "vec2": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "source": {
+      "type": "object",
+      "properties": {
+        "file": { "type": "string" },
+        "page": { "type": "integer", "minimum": 1 },
+        "kind": { "enum": ["dxf", "dwg", "pdf-vector", "pdf-raster", "image", "drawn"] },
+        "metresPerUnit": { "type": "number", "exclusiveMinimum": 0 },
+        "transform": {
+          "description": "Affine drawing-to-plan transform [a, b, c, d, e, f]: x' = a*x + c*y + e, y' = b*x + d*y + f.",
+          "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6
+        }
+      },
+      "additionalProperties": true
+    },
+    "level": {
+      "type": "object",
+      "required": ["id", "name", "elevation", "height", "nodes", "walls", "openings", "rooms"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string" },
+        "elevation": { "type": "number" },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "slabThickness": { "type": "number", "minimum": 0 },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+        "walls": { "type": "array", "items": { "$ref": "#/$defs/wall" } },
+        "openings": { "type": "array", "items": { "$ref": "#/$defs/opening" } },
+        "rooms": { "type": "array", "items": { "$ref": "#/$defs/room" } }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": ["id", "x", "y"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "x": { "type": "number" }, "y": { "type": "number" } },
+      "additionalProperties": false
+    },
+    "wall": {
+      "type": "object",
+      "required": ["id", "a", "b", "thickness", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "a": { "$ref": "#/$defs/id" },
+        "b": { "$ref": "#/$defs/id" },
+        "thickness": { "type": "number", "exclusiveMinimum": 0, "maximum": 1.5 },
+        "kind": { "enum": ["exterior", "interior", "partition", "structural", "railing", "virtual"] },
+        "height": { "type": "number", "exclusiveMinimum": 0 },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      },
+      "additionalProperties": false
+    },
+    "opening": {
+      "type": "object",
+      "required": ["id", "wall", "offset", "width", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "wall": { "$ref": "#/$defs/id" },
+        "offset": { "type": "number", "minimum": 0 },
+        "width": { "type": "number", "exclusiveMinimum": 0 },
+        "kind": { "enum": ["door", "entry", "window", "slider", "passage"] },
+        "sill": { "type": "number", "minimum": 0 },
+        "head": { "type": "number", "exclusiveMinimum": 0 },
+        "hinge": { "enum": ["start", "end"] },
+        "swing": { "enum": ["left", "right"] },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      },
+      "additionalProperties": false
+    },
+    "room": {
+      "type": "object",
+      "required": ["id", "type", "at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": {
+          "enum": ["living", "kitchen", "dining", "bedroom", "bathroom", "wc", "laundry", "storage", "closet",
+                   "hallway", "entry", "office", "safe_room", "balcony", "other"]
+        },
+        "name": { "type": "string" },
+        "at": { "$ref": "#/$defs/vec2" },
+        "floor": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Layout</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='26' height='26' rx='3' fill='%23f4f1ec' stroke='%23333' stroke-width='2.5'/%3E%3Cpath d='M3 15h14V3M17 15v14' stroke='%23333' stroke-width='2.5' fill='none'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <span class="brand__mark" aria-hidden="true"></span>
+        <span class="brand__name" data-i18n="app.title"></span>
+        <span class="brand__tag" data-i18n="app.tagline"></span>
+      </div>
+
+      <label class="field">
+        <span class="field__label" data-i18n="toolbar.plan"></span>
+        <select id="plan-select"></select>
+      </label>
+      <button id="open-file" class="btn" type="button" data-i18n="toolbar.open" data-i18n-title="toolbar.openHint"></button>
+      <input id="file-input" type="file" accept=".json,application/json" hidden />
+
+      <div class="seg" role="group" id="view-modes">
+        <button type="button" data-mode="cutaway" data-i18n="view.cutaway"></button>
+        <button type="button" data-mode="wallsUp" data-i18n="view.wallsUp"></button>
+        <button type="button" data-mode="wallsDown" data-i18n="view.wallsDown"></button>
+        <button type="button" data-mode="walk" data-i18n="view.walk"></button>
+      </div>
+
+      <label class="field field--time">
+        <span class="field__label" data-i18n="toolbar.time"></span>
+        <input id="time" type="range" min="6" max="20" step="0.25" value="10" />
+        <output id="time-out">10:00</output>
+      </label>
+
+      <label class="field" id="level-field" hidden>
+        <span class="field__label" data-i18n="panel.levels"></span>
+        <select id="level-select"></select>
+      </label>
+
+      <label class="field">
+        <span class="field__label" data-i18n="toolbar.quality"></span>
+        <select id="quality">
+          <option value="high" data-i18n="quality.high"></option>
+          <option value="low" data-i18n="quality.low"></option>
+        </select>
+      </label>
+
+      <button id="panel-toggle" class="btn btn--icon" type="button" aria-label="Rooms">☰</button>
+    </header>
+
+    <main class="main">
+      <div id="stage" class="stage">
+        <div id="labels" class="labels"></div>
+        <div id="hint" class="hint"></div>
+        <div id="stats" class="stats"></div>
+        <div id="drop" class="drop" hidden><span data-i18n="toolbar.openHint"></span></div>
+        <div id="toast" class="toast" hidden></div>
+      </div>
+
+      <aside id="panel" class="panel">
+        <section>
+          <h2 class="panel__title"><span data-i18n="panel.rooms"></span> <span id="plan-name" class="panel__sub"></span></h2>
+          <ul id="rooms" class="rooms"></ul>
+          <div class="rooms__total"><span data-i18n="panel.total"></span><span id="total-area"></span></div>
+        </section>
+        <section>
+          <h2 class="panel__title" data-i18n="panel.issues"></h2>
+          <ul id="issues" class="issues"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
