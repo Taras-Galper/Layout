@@ -50,4 +50,5 @@ Then open http://localhost:5173. Other commands:
 | `src/ui/`, `src/main.ts` | the page |
 | `src/i18n/` | all on-screen text (English); add a JSON file per language |
 | `public/plans/` | sample plans |
+| `test-plans/` | real plans for testing the importers (files stay local, see its README) |
 | `tests/` | model tests |

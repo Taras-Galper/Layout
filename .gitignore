@@ -3,3 +3,8 @@ dist/
 *.log
 .DS_Store
 .vite/
+
+# real test plans stay local (private); only the README and corrected truth files are tracked
+test-plans/*
+!test-plans/README.md
+!test-plans/*.truth.json
