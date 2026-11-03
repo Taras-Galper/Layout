@@ -7,17 +7,66 @@ import {
   add, clipPolygon, closestOnSegment, dist, dot, lineIntersect, norm, perpLeft, pointInPolygon,
   polygonArea, polygonCentroid, scale, sub,
 } from './geometry';
+import { type Arc, arcFromSagitta, arcParam, arcPoint, arcSegments, arcTangent } from './arc';
 
 export interface WallGeom {
   wall: Wall;
   a: Vec2;
   b: Vec2;
-  /** Unit direction a → b. */
+  /** Unit direction of the straight line a → b (the chord, for a curved wall). */
   dir: Vec2;
-  /** Unit normal to the left of a → b. */
+  /** Unit normal to the left of that line. */
   left: Vec2;
+  /** Length along the wall (along the arc for a curved wall). */
   length: number;
+  /** Straight distance a → b. */
+  chord: number;
   height: number;
+  /** Set for a curved wall. */
+  arc?: Arc;
+}
+
+/** Geometry of one wall; null when an end node is missing or the wall has no length. */
+export function wallGeom(w: Wall, a: Vec2 | undefined, b: Vec2 | undefined, level: Level): WallGeom | null {
+  if (!a || !b) return null;
+  const chord = dist(a, b);
+  if (chord < 1e-6) return null;
+  const dir = norm(sub(b, a));
+  const arc = w.sagitta ? arcFromSagitta(a, b, w.sagitta) ?? undefined : undefined;
+  return { wall: w, a, b, dir, left: perpLeft(dir), length: arc ? arc.length : chord, chord, height: wallHeight(w, level), arc };
+}
+
+/** Point on the wall's centre-line at distance u from a, the tangent there (a → b) and the normal to its left. */
+export function wallFrame(g: WallGeom, u: number): { p: Vec2; t: Vec2; n: Vec2 } {
+  if (!g.arc) return { p: add(g.a, scale(g.dir, u)), t: g.dir, n: g.left };
+  const t = arcTangent(g.arc, u);
+  return { p: arcPoint(g.arc, u), t, n: perpLeft(t) };
+}
+
+/** Distance along the wall of the point nearest to p (not clamped to the wall). */
+export function wallParam(g: WallGeom, p: Vec2): number {
+  return g.arc ? arcParam(g.arc, p) : dot(sub(p, g.a), g.dir);
+}
+
+/** Distance from p to the wall's centre-line, and the nearest point and its distance along the wall. */
+export function wallDistance(g: WallGeom, p: Vec2): { d: number; point: Vec2; u: number } {
+  if (!g.arc) {
+    const { point, d } = closestOnSegment(p, g.a, g.b);
+    return { d, point, u: dot(sub(point, g.a), g.dir) };
+  }
+  const u = Math.min(Math.max(wallParam(g, p), 0), g.length);
+  const point = arcPoint(g.arc, u);
+  return { d: dist(p, point), point, u };
+}
+
+/** The centre-line as points from a to b (two for a straight wall). */
+export function wallPolyline(g: WallGeom): Vec2[] {
+  if (!g.arc) return [g.a, g.b];
+  const n = arcSegments(g.arc);
+  const pts: Vec2[] = [g.a];
+  for (let i = 1; i < n; i++) pts.push(arcPoint(g.arc, (g.length * i) / n));
+  pts.push(g.b);
+  return pts;
 }
 
 export interface LevelIndex {
@@ -32,12 +81,8 @@ export function indexLevel(level: Level): LevelIndex {
   for (const n of level.nodes) nodes.set(n.id, [n.x, n.y]);
   const walls = new Map<string, WallGeom>();
   for (const w of level.walls) {
-    const a = nodes.get(w.a), b = nodes.get(w.b);
-    if (!a || !b) continue;
-    const length = dist(a, b);
-    if (length < 1e-6) continue;
-    const dir = norm(sub(b, a));
-    walls.set(w.id, { wall: w, a, b, dir, left: perpLeft(dir), length, height: wallHeight(w, level) });
+    const g = wallGeom(w, nodes.get(w.a), nodes.get(w.b), level);
+    if (g) walls.set(w.id, g);
   }
   const openingsByWall = new Map<string, Opening[]>();
   for (const o of level.openings) {
@@ -74,8 +119,8 @@ export function wallFootprints(idx: LevelIndex): Map<string, WallFootprint> {
       list.push({ id, away, h, angle: Math.atan2(away[1], away[0]) });
       ends.set(node, list);
     };
-    push(g.wall.a, g.dir);
-    push(g.wall.b, scale(g.dir, -1));
+    push(g.wall.a, wallFrame(g, 0).t);
+    push(g.wall.b, scale(wallFrame(g, g.length).t, -1));
   }
 
   // corner points per (node, wall): left / right relative to the direction pointing away from the node
@@ -108,7 +153,16 @@ export function wallFootprints(idx: LevelIndex): Map<string, WallFootprint> {
     if (g.wall.kind === 'virtual') continue;
     const ca = corner.get(`${g.wall.a}|${id}`)!, cb = corner.get(`${g.wall.b}|${id}`)!;
     // at a the away direction is a→b; at b it is reversed, so its left is the a→b right side
-    const polygon: Vec2[] = [ca.r, cb.l, g.b, cb.r, ca.l, g.a];
+    const right: Vec2[] = [], left: Vec2[] = [];
+    if (g.arc) {
+      const h = g.wall.thickness / 2, n = arcSegments(g.arc);
+      for (let i = 1; i < n; i++) {
+        const f = wallFrame(g, (g.length * i) / n);
+        right.push(add(f.p, scale(f.n, -h)));
+        left.push(add(f.p, scale(f.n, h)));
+      }
+    }
+    const polygon: Vec2[] = [ca.r, ...right, cb.l, g.b, cb.r, ...left.reverse(), ca.l, g.a];
     out.set(id, { geom: g, polygon: dedupe(polygon) });
   }
   return out;
@@ -123,12 +177,14 @@ function dedupe(poly: Vec2[]): Vec2[] {
 
 /** Position of a point along a wall (u) and across it (v, positive to the left). */
 export function toWallLocal(g: WallGeom, p: Vec2): Vec2 {
-  const d = sub(p, g.a);
-  return [dot(d, g.dir), dot(d, g.left)];
+  const u = wallParam(g, p);
+  const f = wallFrame(g, u);
+  return [u, dot(sub(p, f.p), f.n)];
 }
 
 export function fromWallLocal(g: WallGeom, u: number, v: number): Vec2 {
-  return add(add(g.a, scale(g.dir, u)), scale(g.left, v));
+  const f = wallFrame(g, u);
+  return add(f.p, scale(f.n, v));
 }
 
 /** Openings of a wall as [start, end] intervals along it, clamped to the wall. */
@@ -179,28 +235,35 @@ export function detectRooms(idx: LevelIndex): RoomResult {
   const out = new Map<string, HE[]>();
   for (const [id, g] of idx.walls) {
     const a = g.wall.a, b = g.wall.b;
-    (out.get(a) ?? out.set(a, []).get(a)!).push({ from: a, to: b, wall: id, angle: Math.atan2(g.dir[1], g.dir[0]) });
-    (out.get(b) ?? out.set(b, []).get(b)!).push({ from: b, to: a, wall: id, angle: Math.atan2(-g.dir[1], -g.dir[0]) });
+    const ta = wallFrame(g, 0).t, tb = wallFrame(g, g.length).t;
+    (out.get(a) ?? out.set(a, []).get(a)!).push({ from: a, to: b, wall: id, angle: Math.atan2(ta[1], ta[0]) });
+    (out.get(b) ?? out.set(b, []).get(b)!).push({ from: b, to: a, wall: id, angle: Math.atan2(-tb[1], -tb[0]) });
   }
   for (const list of out.values()) list.sort((p, q) => p.angle - q.angle);
 
   const key = (h: HE) => `${h.from}>${h.to}>${h.wall}`;
   const seen = new Set<string>();
-  const faces: { nodes: string[]; walls: string[] }[] = [];
+  const faces: { nodes: string[]; walls: string[]; segs: Seg[] }[] = [];
   for (const list of out.values()) {
     for (const start of list) {
       if (seen.has(key(start))) continue;
-      const nodes: string[] = [], walls: string[] = [];
+      const nodes: string[] = [], walls: string[] = [], segs: Seg[] = [];
       let h = start, guard = 0;
       while (!seen.has(key(h)) && guard++ < 10000) {
         seen.add(key(h));
         nodes.push(h.from);
         walls.push(h.wall);
+        // the wall as straight pieces in the direction of travel
+        const g = idx.walls.get(h.wall)!;
+        const pts = wallPolyline(g);
+        if (h.from !== g.wall.a) pts.reverse();
+        const half = g.wall.kind === 'virtual' ? 0 : g.wall.thickness / 2;
+        for (let i = 0; i + 1 < pts.length; i++) segs.push({ p: pts[i], q: pts[i + 1], h: half });
         const around = out.get(h.to)!;
         const back = around.findIndex((x) => x.to === h.from && x.wall === h.wall);
         h = around[(back - 1 + around.length) % around.length];
       }
-      faces.push({ nodes, walls });
+      faces.push({ nodes, walls, segs });
     }
   }
 
@@ -210,11 +273,11 @@ export function detectRooms(idx: LevelIndex): RoomResult {
   const outlines: Vec2[][] = [];
   let untagged = 0;
   for (const f of faces) {
-    const polygon = f.nodes.map((n) => idx.nodes.get(n)!);
+    const polygon = f.segs.map((sg) => sg.p);
     const signed = polygonArea(polygon);
     if (signed < -0.05) { outlines.push([...polygon].reverse()); continue; } // outside of a wall group
     if (signed <= 0.05) continue; // slivers and dangling walls
-    const inner = insetLoop(idx, f.nodes, f.walls);
+    const inner = insetLoop(f.segs);
     const tag = tags.find((t) => !used.has(t.id) && pointInPolygon(t.at, polygon));
     if (tag) used.add(tag.id); else untagged++;
     rooms.push({
@@ -232,20 +295,20 @@ export function detectRooms(idx: LevelIndex): RoomResult {
   return { rooms, outlines, untagged, orphanTags: tags.filter((t) => !used.has(t.id)) };
 }
 
+/** One straight piece of a face loop, with half the thickness of its wall. */
+interface Seg { p: Vec2; q: Vec2; h: number }
+
 /** Shrink a face loop by half of each wall's thickness (virtual walls have none). */
-function insetLoop(idx: LevelIndex, nodes: string[], walls: string[]): Vec2[] {
-  const n = nodes.length;
-  const lines = walls.map((w, i) => {
-    const g = idx.walls.get(w)!;
-    const p = idx.nodes.get(nodes[i])!, q = idx.nodes.get(nodes[(i + 1) % n])!;
+function insetLoop(segs: Seg[]): Vec2[] {
+  const n = segs.length;
+  const lines = segs.map(({ p, q, h }) => {
     const d = norm(sub(q, p));
-    const h = g.wall.kind === 'virtual' ? 0 : g.wall.thickness / 2;
     return { p: add(p, scale(perpLeft(d), h)), d, h };
   });
   const pts: Vec2[] = [];
   for (let i = 0; i < n; i++) {
     const prev = lines[(i - 1 + n) % n], cur = lines[i];
-    const node = idx.nodes.get(nodes[i])!;
+    const node = segs[i].p;
     const x = lineIntersect(prev.p, prev.d, cur.p, cur.d);
     if (x && dist(x, node) < 4 * Math.max(prev.h, cur.h, 0.01)) pts.push(x);
     else if (dot(prev.d, cur.d) < -0.99) {
@@ -295,7 +358,8 @@ export interface WallPieces {
 /** Cuts a wall outline at its openings. Used by the 3D builder and the 2D editor alike. */
 export function wallPieces(idx: LevelIndex, fp: WallFootprint): WallPieces {
   const g = fp.geom;
-  const toU = (p: Vec2) => (p[0] - g.a[0]) * g.dir[0] + (p[1] - g.a[1]) * g.dir[1];
+  // cut across the wall at distances along it (radially for a curved wall)
+  const toU = (p: Vec2) => wallParam(g, p);
   const slab = (u0: number, u1: number) => clipPolygon(clipPolygon(fp.polygon, (p) => toU(p) - u0), (p) => u1 - toU(p));
   const spans = openingSpans(idx, g.wall.id).filter((s) => s.u1 - s.u0 > 0.01);
   const solids: Vec2[][] = [];

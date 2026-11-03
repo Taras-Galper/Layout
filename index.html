@@ -40,7 +40,9 @@
           <nav class="tools" id="tools">
             <button type="button" data-tool="select" title="V"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 1.5L10 19z"/></svg><span data-i18n="tool.select"></span></button>
             <button type="button" data-tool="wall" title="W"><svg viewBox="0 0 24 24"><path d="M3 17h12V5" class="thick"/></svg><span data-i18n="tool.wall"></span></button>
+            <button type="button" data-tool="arc" title="A"><svg viewBox="0 0 24 24"><path d="M4 19A15 15 0 0 1 19 4" class="thick"/></svg><span data-i18n="tool.arc"></span></button>
             <button type="button" data-tool="rect" title="R"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" class="thick"/></svg><span data-i18n="tool.rect"></span></button>
+            <button type="button" data-tool="circle" title="C"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" class="thick"/></svg><span data-i18n="tool.circle"></span></button>
             <button type="button" data-tool="door" title="D"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 20V8M6 8a12 12 0 0 1 12 12" /></svg><span data-i18n="tool.door"></span></button>
             <button type="button" data-tool="window" title="N"><svg viewBox="0 0 24 24"><path d="M3 9h18M3 15h18M3 12h18M3 9v6M21 9v6" /></svg><span data-i18n="tool.window"></span></button>
             <button type="button" data-tool="slider" title="S"><svg viewBox="0 0 24 24"><path d="M3 10h11M10 14h11M3 7v10M21 7v10" /></svg><span data-i18n="tool.slider"></span></button>
@@ -59,8 +61,8 @@
           </nav>
           <div class="plan-area">
             <div class="tool-opts" id="tool-opts">
-              <label data-for="wall rect"><span data-i18n="tool.kind"></span><select id="opt-wall-kind"></select></label>
-              <label data-for="wall rect"><span data-i18n="tool.thickness"></span><input id="opt-thickness" type="number" min="1" max="100" step="1" /><span class="unit" data-i18n="unit.cm"></span></label>
+              <label data-for="wall arc rect circle"><span data-i18n="tool.kind"></span><select id="opt-wall-kind"></select></label>
+              <label data-for="wall arc rect circle"><span data-i18n="tool.thickness"></span><input id="opt-thickness" type="number" min="1" max="100" step="1" /><span class="unit" data-i18n="unit.cm"></span></label>
               <label data-for="room"><span data-i18n="tool.roomType"></span><select id="opt-room-type"></select></label>
             </div>
             <div id="plan2d" class="plan2d-host"></div>

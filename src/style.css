@@ -141,7 +141,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 /* ---------------------------------------------------------------- 2D plan */
 .plan2d { display: block; touch-action: none; user-select: none; outline: none; cursor: default; }
 .plan2d[data-tool="select"] { cursor: default; }
-.plan2d[data-tool="wall"], .plan2d[data-tool="rect"], .plan2d[data-tool="calibrate"] { cursor: crosshair; }
+.plan2d[data-tool="wall"], .plan2d[data-tool="arc"], .plan2d[data-tool="rect"], .plan2d[data-tool="circle"], .plan2d[data-tool="calibrate"] { cursor: crosshair; }
 .plan2d[data-tool="door"], .plan2d[data-tool="window"], .plan2d[data-tool="slider"], .plan2d[data-tool="passage"], .plan2d[data-tool="room"] { cursor: copy; }
 .plan2d[data-tool="moveUnderlay"] { cursor: move; }
 .plan2d * { vector-effect: non-scaling-stroke; }
@@ -173,6 +173,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .hover { fill: none; stroke: var(--hover); stroke-width: 2; stroke-opacity: 0.7; }
 .sel { fill: none; stroke: var(--select); stroke-width: 2.5; }
 .sel--room, .hover--room { stroke-dasharray: 6 4; fill: var(--select); fill-opacity: 0.06; }
+.curve-handle { fill: #fff; stroke: var(--select); stroke-width: 2; cursor: grab; }
 .dim { fill: var(--select); font-weight: 600; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
 .dim--live { fill: var(--snap); }
 

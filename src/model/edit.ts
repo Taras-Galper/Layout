@@ -4,12 +4,16 @@ import {
   type Level, type Opening, type OpeningKind, type PlanNode, type RoomTag, type RoomType, type Vec2,
   type Wall, type WallKind,
 } from './plan';
-import { add, closestOnSegment, cross, dist, dot, norm, scale, sub } from './geometry';
+import { add, cross, dist, dot, norm, scale, sub } from './geometry';
+import { type WallGeom, wallDistance, wallFrame, wallGeom, wallParam, wallPolyline } from './topology';
+import { subSagitta } from './arc';
 
 export interface WallProps {
   thickness: number;
   kind: WallKind;
   height?: number;
+  /** Curved wall: see Wall.sagitta. */
+  sagitta?: number;
 }
 
 export const WALL_PRESETS: Record<WallKind, number> = {
@@ -54,10 +58,23 @@ export function nodePos(level: Level, id: string): Vec2 {
   return [n.x, n.y];
 }
 
+/** The wall's end points, its length along the wall, and the direction of the straight line a → b. */
 export function wallEnds(level: Level, w: Wall): { a: Vec2; b: Vec2; len: number; dir: Vec2 } {
   const a = nodePos(level, w.a), b = nodePos(level, w.b);
-  return { a, b, len: dist(a, b), dir: norm(sub(b, a)) };
+  const g = wallGeom(w, a, b, level);
+  return { a, b, len: g ? g.length : dist(a, b), dir: norm(sub(b, a)) };
 }
+
+/** Full geometry of one wall (curved walls included). */
+export function geomOf(level: Level, w: Wall): WallGeom | null {
+  const a = nodeById(level, w.a), b = nodeById(level, w.b);
+  return wallGeom(w, a && [a.x, a.y], b && [b.x, b.y], level);
+}
+
+const isCurved = (w: Wall) => !!w.sagitta && Math.abs(w.sagitta) >= 0.005;
+const sameWall = (w: Wall, a: string, b: string, sagitta = 0) =>
+  ((w.a === a && w.b === b && Math.abs((w.sagitta ?? 0) - sagitta) < 0.01) ||
+   (w.a === b && w.b === a && Math.abs((w.sagitta ?? 0) + sagitta) < 0.01));
 
 export function wallsAt(level: Level, nodeId: string): Wall[] {
   return level.walls.filter((w) => w.a === nodeId || w.b === nodeId);
@@ -79,9 +96,10 @@ export function findWall(level: Level, p: Vec2, tol: number, except?: Set<string
   let best: { wall: Wall; u: number; point: Vec2; d: number } | undefined;
   for (const w of level.walls) {
     if (except?.has(w.id)) continue;
-    const { a, b, dir } = wallEnds(level, w);
-    const { point, d } = closestOnSegment(p, a, b);
-    if (d <= tol && (!best || d < best.d)) best = { wall: w, u: dot(sub(point, a), dir), point, d };
+    const g = geomOf(level, w);
+    if (!g) continue;
+    const { point, d, u } = wallDistance(g, p);
+    if (d <= tol && (!best || d < best.d)) best = { wall: w, u, point, d };
   }
   return best;
 }
@@ -97,10 +115,16 @@ export function addNode(level: Level, p: Vec2): string {
 /** Splits a wall at distance u from its start; returns the new node. Openings go to whichever half holds their centre. */
 export function splitWall(level: Level, wallId: string, u: number): string {
   const w = wallById(level, wallId)!;
-  const { a, len, dir } = wallEnds(level, w);
+  const g = geomOf(level, w)!;
+  const len = g.length;
   u = Math.min(Math.max(u, 0.001), len - 0.001);
-  const node = addNode(level, add(a, scale(dir, u)));
+  const node = addNode(level, wallFrame(g, u).p);
   const second: Wall = { ...w, id: newId(level, 'w'), a: node, b: w.b };
+  if (g.arc) {
+    // both halves stay on the same circle
+    w.sagitta = round(subSagitta(g.arc, 0, u));
+    second.sagitta = round(subSagitta(g.arc, u, len));
+  }
   w.b = node;
   level.walls.push(second);
   for (const o of level.openings) {
@@ -177,6 +201,17 @@ export function addWall(level: Level, p: Vec2, q: Vec2, props: WallProps, tol: n
   const a = ensureNode(level, p, tol);
   const b = ensureNode(level, q, tol);
   if (a === b) return [];
+  if (props.sagitta && Math.abs(props.sagitta) >= 0.005) {
+    // a curved wall: one wall end to end, split wherever it crosses others
+    if (level.walls.some((w) => sameWall(w, a, b, props.sagitta))) return [];
+    const before = new Set(level.walls.map((w) => w.id));
+    const id = newId(level, 'w');
+    const wall: Wall = { id, a, b, thickness: props.thickness, kind: props.kind, sagitta: round(props.sagitta) };
+    if (props.height !== undefined) wall.height = props.height;
+    level.walls.push(wall);
+    splitCrossings(level);
+    return level.walls.filter((w) => !before.has(w.id)).map((w) => w.id);
+  }
   const pa = nodePos(level, a), pb = nodePos(level, b);
   const len = dist(pa, pb);
   if (len < 0.02) return [];
@@ -192,6 +227,7 @@ export function addWall(level: Level, p: Vec2, q: Vec2, props: WallProps, tol: n
   }
   for (const w of [...level.walls]) {
     if ([w.a, w.b].some((x) => x === a || x === b)) continue;
+    if (isCurved(w)) continue; // crossings with curved walls are found below
     const e = wallEnds(level, w);
     const hit = segmentHit(pa, pb, e.a, e.b);
     if (!hit) continue;
@@ -205,14 +241,25 @@ export function addWall(level: Level, p: Vec2, q: Vec2, props: WallProps, tol: n
   for (let i = 0; i + 1 < stops.length; i++) {
     const n0 = stops[i].node, n1 = stops[i + 1].node;
     if (n0 === n1) continue;
-    if (level.walls.some((w) => (w.a === n0 && w.b === n1) || (w.a === n1 && w.b === n0))) continue;
+    if (level.walls.some((w) => sameWall(w, n0, n1))) continue;
     const id = newId(level, 'w');
     const wall: Wall = { id, a: n0, b: n1, thickness: props.thickness, kind: props.kind };
     if (props.height !== undefined) wall.height = props.height;
     level.walls.push(wall);
     ids.push(id);
   }
-  return ids;
+  if (level.walls.some(isCurved)) splitCrossings(level);
+  return ids.filter((id) => wallById(level, id));
+}
+
+/** A round room: two half-circle walls through the points left and right of the centre. */
+export function addCircle(level: Level, c: Vec2, r: number, props: WallProps, tol: number): string[] {
+  if (r < 0.15) return [];
+  const west: Vec2 = [c[0] - r, c[1]], east: Vec2 = [c[0] + r, c[1]];
+  return [
+    ...addWall(level, west, east, { ...props, sagitta: r }, tol),
+    ...addWall(level, west, east, { ...props, sagitta: -r }, tol),
+  ];
 }
 
 /** Four walls around the rectangle with corners p and q. */
@@ -258,6 +305,7 @@ export function healNode(level: Level, nodeId: string): void {
   const ws = wallsAt(level, nodeId);
   if (ws.length !== 2) return;
   const [w1, w2] = ws;
+  if (isCurved(w1) || isCurved(w2)) return;
   if (w1.kind !== w2.kind || Math.abs(w1.thickness - w2.thickness) > 1e-6 || w1.height !== w2.height) return;
   const far1 = w1.a === nodeId ? w1.b : w1.a, far2 = w2.a === nodeId ? w2.b : w2.a;
   if (far1 === far2) return;
@@ -288,7 +336,9 @@ function removeDegenerateWalls(level: Level): void {
   const seen = new Set<string>();
   const drop = new Set<string>();
   for (const w of level.walls) {
-    const key = [w.a, w.b].sort().join('|');
+    // walls between the same two points are doubles unless they bow differently
+    const s = Math.round((w.a < w.b ? 1 : -1) * (w.sagitta ?? 0) * 100);
+    const key = `${[w.a, w.b].sort().join('|')}|${s}`;
     if (w.a === w.b || seen.has(key)) drop.add(w.id);
     seen.add(key);
   }
@@ -304,14 +354,13 @@ export function splitCrossings(level: Level): void {
       for (let j = i + 1; j < level.walls.length; j++) {
         const A = level.walls[i], B = level.walls[j];
         if (A.kind === 'virtual' && B.kind === 'virtual') continue;
-        if ([A.a, A.b].some((x) => x === B.a || x === B.b)) continue;
-        const ea = wallEnds(level, A), eb = wallEnds(level, B);
-        const hit = segmentHit(ea.a, ea.b, eb.a, eb.b);
+        const ga = geomOf(level, A), gb = geomOf(level, B);
+        if (!ga || !gb) continue;
+        const shared = [A.a, A.b].filter((x) => x === B.a || x === B.b);
+        const hit = firstCrossing(ga, gb, shared.length > 0);
         if (!hit) continue;
-        const [t, s] = hit;
-        if (t * ea.len < 0.01 || (1 - t) * ea.len < 0.01 || s * eb.len < 0.01 || (1 - s) * eb.len < 0.01) continue;
-        const n = splitWall(level, A.id, t * ea.len);
-        const m = splitWall(level, B.id, s * eb.len);
+        const n = splitWall(level, A.id, hit[0]);
+        const m = splitWall(level, B.id, hit[1]);
         mergeNodes(level, n, m);
         found = true;
         break outer;
@@ -319,6 +368,24 @@ export function splitCrossings(level: Level): void {
     }
     if (!found) return;
   }
+}
+
+/** Where two walls cross (distances along each), away from their ends. Works for curved walls too. */
+function firstCrossing(ga: WallGeom, gb: WallGeom, sharesNode: boolean): [number, number] | null {
+  if (sharesNode && !ga.arc && !gb.arc) return null; // two straight walls from one point only meet there
+  const pa = wallPolyline(ga), pb = wallPolyline(gb);
+  const end = 0.01;
+  for (let i = 0; i + 1 < pa.length; i++) {
+    for (let j = 0; j + 1 < pb.length; j++) {
+      const hit = segmentHit(pa[i], pa[i + 1], pb[j], pb[j + 1]);
+      if (!hit) continue;
+      const x = add(pa[i], scale(sub(pa[i + 1], pa[i]), hit[0]));
+      const ua = wallParam(ga, x), ub = wallParam(gb, x);
+      if (ua < end || ua > ga.length - end || ub < end || ub > gb.length - end) continue;
+      return [ua, ub];
+    }
+  }
+  return null;
 }
 
 function segmentHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2): [number, number] | null {
@@ -333,9 +400,8 @@ function segmentHit(a: Vec2, b: Vec2, c: Vec2, d: Vec2): [number, number] | null
 // ---------------------------------------------------------------- openings
 
 export function openingCentre(level: Level, o: Opening): Vec2 {
-  const w = wallById(level, o.wall)!;
-  const { a, dir } = wallEnds(level, w);
-  return add(a, scale(dir, o.offset));
+  const g = geomOf(level, wallById(level, o.wall)!)!;
+  return wallFrame(g, o.offset).p;
 }
 
 /** Keeps an opening inside its wall, shrinking it if the wall is too short. */

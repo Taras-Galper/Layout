@@ -4,7 +4,7 @@ import { formatNumber, t } from '../i18n';
 import { OPENING_DEFAULTS, OPENING_KINDS, ROOM_TYPES, WALL_KINDS, type Level, wallHeight } from '../model/plan';
 import { dist, norm, sub, add, scale, pointInPolygon } from '../model/geometry';
 import {
-  WALL_PRESETS, addRoomTag, clampOpening, nodeById, openingById, roomById, settleNode, wallById, wallEnds, moveNode,
+  WALL_PRESETS, addRoomTag, clampOpening, geomOf, nodeById, openingById, roomById, settleNode, wallById, wallEnds, moveNode,
 } from '../model/edit';
 import { detectRooms, indexLevel } from '../model/topology';
 
@@ -15,7 +15,7 @@ type Field =
   | { kind: 'info'; label: string; value: string }
   | { kind: 'buttons'; buttons: { label: string; run: (l: Level) => void; danger?: boolean }[] };
 
-const toUnit = (v: number, unit: 'cm' | 'm' | '°') => (unit === 'cm' ? Math.round(v * 1000) / 10 : unit === 'm' ? Math.round(v * 1000) / 1000 : v);
+const toUnit = (v: number, unit: 'cm' | 'm' | '°'): number => (unit === 'cm' ? Math.round(v * 1000) / 10 : unit === 'm' ? Math.round(v * 1000) / 1000 : v);
 const fromUnit = (v: number, unit: 'cm' | 'm' | '°') => (unit === 'cm' ? v / 100 : v);
 
 export class PropertiesPanel {
@@ -54,8 +54,9 @@ export class PropertiesPanel {
       const w = wallById(level, s.id);
       if (!w) return { title: '', fields: [] };
       const e = wallEnds(level, w);
+      const geom = geomOf(level, w);
       return {
-        title: t('props.wall'),
+        title: w.sagitta ? t('props.curvedWall') : t('props.wall'),
         fields: [
           {
             kind: 'select', label: t('props.type'), value: w.kind,
@@ -74,12 +75,30 @@ export class PropertiesPanel {
               if (!v) return;
               const x = wallById(l, s.id)!;
               const ends = wallEnds(l, x);
-              moveNode(l, x.b, add(ends.a, scale(ends.dir, v)));
+              // a curved wall keeps its shape: the straight distance scales with the length
+              const k = v / ends.len;
+              const chord = Math.hypot(ends.b[0] - ends.a[0], ends.b[1] - ends.a[1]);
+              moveNode(l, x.b, add(ends.a, scale(ends.dir, chord * k)));
+              if (x.sagitta) x.sagitta *= k;
               settleNode(l, x.b, 0.01);
             },
           },
           { kind: 'number', label: t('props.height'), value: w.height, placeholder: wallHeight({ ...w, height: undefined }, level), unit: 'm', set: (v, l) => { const x = wallById(l, s.id)!; if (v) x.height = v; else delete x.height; } },
-          { kind: 'buttons', buttons: [del] },
+          {
+            kind: 'number', label: t('props.curve'), value: w.sagitta ?? 0, unit: 'cm',
+            set: (v, l) => { const x = wallById(l, s.id)!; if (v && Math.abs(v) >= 0.005) x.sagitta = v; else delete x.sagitta; },
+          },
+          ...(geom?.arc ? [{ kind: 'info' as const, label: t('props.radius'), value: `${formatNumber(geom.arc.radius, 2)} m` }] : []),
+          {
+            kind: 'buttons',
+            buttons: [
+              ...(w.sagitta ? [
+                { label: t('props.straighten'), run: (l: Level) => { delete wallById(l, s.id)!.sagitta; } },
+                { label: t('props.flipCurve'), run: (l: Level) => { const x = wallById(l, s.id)!; if (x.sagitta) x.sagitta = -x.sagitta; } },
+              ] : []),
+              del,
+            ],
+          },
         ],
       };
     }

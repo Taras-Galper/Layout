@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import type { Level, Plan, RoomTag, Vec2 } from '../model/plan';
 import { DEFAULT_SLAB } from '../model/plan';
 import {
-  type Room, type WallGeom, detectRooms, fromWallLocal, indexLevel, wallFootprints, wallPieces,
+  type Room, type WallGeom, detectRooms, fromWallLocal, indexLevel, wallFootprints, wallFrame, wallPieces,
 } from '../model/topology';
 import { MATERIALS, floorMaterial, hasCeiling } from './materials';
 import { flatPolygon, PrismBuilder } from './prism';
@@ -79,10 +79,14 @@ function buildLevel(level: Level): LevelBuild {
       if (s.head < H - 0.005) pb.addPrism(poly, s.head, H, { capMat: 1 });
       if (s.sill > 0.05) blockers.push(poly); // windows block walking
       // the door / window model, placed at the opening centre and turned along the wall
-      const model = buildOpening({ opening: s.opening, width: s.u1 - s.u0, sill: s.sill, head: s.head, thickness: g.wall.thickness });
+      // on a curved wall the frame spans the chord between the opening's ends
+      const p0 = fromWallLocal(g, s.u0, 0), p1 = fromWallLocal(g, s.u1, 0);
+      const width = g.arc ? Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) : s.u1 - s.u0;
+      const model = buildOpening({ opening: s.opening, width, sill: s.sill, head: s.head, thickness: g.wall.thickness });
       const c = fromWallLocal(g, (s.u0 + s.u1) / 2, 0);
+      const t = wallFrame(g, (s.u0 + s.u1) / 2).t;
       model.group.position.set(c[0], 0, -c[1]);
-      model.group.rotation.y = Math.atan2(g.dir[1], g.dir[0]);
+      model.group.rotation.y = Math.atan2(t[1], t[0]);
       model.group.name = `opening:${s.opening.id}`;
       wallGroup.add(model.group);
     }

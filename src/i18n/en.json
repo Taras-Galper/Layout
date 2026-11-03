@@ -96,7 +96,7 @@
   "tool.kind": "Type",
   "tool.thickness": "Thickness",
   "tool.roomType": "Name as",
-  "hint.select": "Click to select · drag points, walls, openings and names to move them · drag empty space to pan · scroll to zoom · Delete removes",
+  "hint.select": "Click to select · drag points, walls, openings and names to move them · drag the dot in the middle of a selected wall to curve it · drag empty space to pan · scroll to zoom · Delete removes",
   "hint.wall": "Click to start a wall · it snaps to points, walls, straight angles and lines through other points · Alt turns snapping off",
   "hint.wallNext": "Click the next corner, or type a length (3.2 = metres, 320 = cm) · double-click, Enter or right-click to stop",
   "hint.rect": "Drag (or click two corners) to draw four walls around a room",
@@ -155,5 +155,16 @@
   "plan.untitled": "Untitled plan",
   "panel.noRooms": "No closed rooms yet",
   "load.underlayFailed": "Could not open the drawing: {reason}",
-  "load.opening": "Opening {name}…"
+  "load.opening": "Opening {name}…",
+  "tool.arc": "Curved wall",
+  "tool.circle": "Round room",
+  "hint.arc": "Click where the curved wall starts",
+  "hint.arc2": "Click where it ends",
+  "hint.arc3": "Move to bow it and click on the curve (any point of the arc you are tracing) · Esc cancels",
+  "hint.circle": "Drag from the centre outwards (or click the centre, then a point on the circle)",
+  "props.curve": "Curve",
+  "props.radius": "Radius",
+  "props.straighten": "Straighten",
+  "props.flipCurve": "Flip curve",
+  "props.curvedWall": "Curved wall"
 }

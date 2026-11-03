@@ -3,13 +3,14 @@
 import type { Store } from '../app/store';
 import { formatNumber, t } from '../i18n';
 import { type Level, type OpeningKind, type RoomType, type Vec2, type WallKind } from '../model/plan';
-import { add, closestOnSegment, dist, dot, norm, pointInPolygon, scale, sub } from '../model/geometry';
+import { add, dist, dot, norm, pointInPolygon, scale, sub } from '../model/geometry';
+import { arcFromSagitta, arcPoint, arcSegments, sagittaThrough } from '../model/arc';
 import {
   type Room, type WallFootprint, type WallPieces, detectRooms, fromWallLocal, indexLevel, levelBounds, wallFootprints, wallPieces,
-  type LevelIndex,
+  type LevelIndex, wallDistance, wallFrame, wallParam, wallPolyline, toWallLocal,
 } from '../model/topology';
 import {
-  addOpening, addRect, addRoomTag, addWall, deleteNode, deleteOpening, deleteRoomTag, deleteWall, moveNode, moveOpening, moveRoomTag, nodeById, openingCentre, settleNode,
+  addCircle, addOpening, addRect, addRoomTag, addWall, deleteNode, deleteOpening, deleteRoomTag, deleteWall, moveNode, moveOpening, moveRoomTag, nodeById, settleNode,
   OPENING_WIDTHS, wallById, wallEnds,
 } from '../model/edit';
 import { type SnapResult, snapPoint } from './snap';
@@ -17,7 +18,7 @@ import { type UnderlayImage, type UnderlayTransform, defaultTransform } from './
 import { Ask, parseLength } from './ask';
 import { roomName } from '../ui/labels';
 
-export type Tool = 'select' | 'wall' | 'rect' | 'door' | 'window' | 'slider' | 'passage' | 'room' | 'calibrate' | 'moveUnderlay';
+export type Tool = 'select' | 'wall' | 'arc' | 'rect' | 'circle' | 'door' | 'window' | 'slider' | 'passage' | 'room' | 'calibrate' | 'moveUnderlay';
 
 export const OPENING_TOOLS: Partial<Record<Tool, OpeningKind>> = { door: 'door', window: 'window', slider: 'slider', passage: 'passage' };
 
@@ -41,6 +42,8 @@ type Drag =
   | { kind: 'opening'; id: string; moved: boolean; start: [number, number] }
   | { kind: 'tag'; id: string; moved: boolean; start: [number, number] }
   | { kind: 'rect'; from: Vec2; moved: boolean; start: [number, number] }
+  | { kind: 'circle'; from: Vec2; moved: boolean; start: [number, number] }
+  | { kind: 'curve'; id: string; moved: boolean; start: [number, number] }
   | { kind: 'underlay'; last: Vec2; moved: boolean };
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -76,6 +79,8 @@ export class Editor2D {
   private chain: Vec2 | null = null;
   private chainFirst: Vec2 | null = null;
   private rectFrom: Vec2 | null = null;
+  /** Arc tool: the two ends, picked before the bow. */
+  private arcEnds: Vec2[] = [];
   private calib: Vec2[] = [];
   private altKey = false;
   private spaceKey = false;
@@ -191,6 +196,7 @@ export class Editor2D {
   /** Stop whatever is half-done (a wall chain, a rectangle, calibration). */
   cancelTool(): void {
     this.chain = this.chainFirst = this.rectFrom = null;
+    this.arcEnds = [];
     this.calib = [];
     if (this.drag && this.drag.kind !== 'pan') this.store.cancel();
     this.drag = null;
@@ -200,6 +206,7 @@ export class Editor2D {
   private status(): void {
     const key = {
       select: 'hint.select', wall: this.chain ? 'hint.wallNext' : 'hint.wall', rect: 'hint.rect',
+      arc: ['hint.arc', 'hint.arc2', 'hint.arc3'][this.arcEnds.length], circle: 'hint.circle',
       door: 'hint.opening', window: 'hint.opening', slider: 'hint.opening', passage: 'hint.opening',
       room: 'hint.room', calibrate: this.calib.length ? 'hint.calibrate2' : 'hint.calibrate', moveUnderlay: 'hint.moveUnderlay',
     }[this.tool];
@@ -215,7 +222,7 @@ export class Editor2D {
     if (mod && k.toLowerCase() === 'y') { this.store.redo(); return true; }
     if (mod) return false;
     if (k === 'Escape') {
-      if (this.chain || this.rectFrom || this.calib.length || this.drag) this.cancelTool();
+      if (this.chain || this.rectFrom || this.arcEnds.length || this.calib.length || this.drag) this.cancelTool();
       else if (this.tool !== 'select') this.setTool('select');
       else this.store.select(null);
       this.render();
@@ -225,7 +232,7 @@ export class Editor2D {
     if (k === 'Enter' && this.chain) { this.endChain(); return true; }
     if ((k === 'Delete' || k === 'Backspace') && this.store.selection) { this.deleteSelection(); return true; }
     if (this.tool === 'wall' && this.chain && /^[0-9.,]$/.test(k)) { this.typeLength(k); return true; }
-    const tools: Record<string, Tool> = { v: 'select', w: 'wall', r: 'rect', d: 'door', n: 'window', s: 'slider', o: 'passage', t: 'room' };
+    const tools: Record<string, Tool> = { v: 'select', w: 'wall', a: 'arc', r: 'rect', c: 'circle', d: 'door', n: 'window', s: 'slider', o: 'passage', t: 'room' };
     const tool = tools[k.toLowerCase()];
     if (tool && !e.altKey) { this.setTool(tool); return true; }
     if (k.toLowerCase() === 'f') { this.fit(); return true; }
@@ -383,13 +390,16 @@ export class Editor2D {
   }
 
   private snapFor(p: Vec2, except?: Set<string>): SnapResult {
-    return snapPoint(this.store.level, p, { tol: this.tol, from: this.chain ?? this.rectFrom ?? undefined, except, off: this.altKey });
+    const from = this.chain ?? this.rectFrom ?? (this.tool === 'arc' && this.arcEnds.length === 1 ? this.arcEnds[0] : undefined);
+    return snapPoint(this.store.level, p, { tol: this.tol, from: from ?? undefined, except, off: this.altKey });
   }
 
   private down(p: Vec2, px: [number, number]): void {
     const level = this.store.level;
     switch (this.tool) {
       case 'select': {
+        const handle = this.curveHandleAt(px);
+        if (handle) { this.drag = { kind: 'curve', id: handle, moved: false, start: px }; return; }
         const hit = this.hitTest(p);
         if (!hit) { this.store.select(null); this.drag = { kind: 'pan', last: px }; return; }
         if (hit.kind === 'loop') { this.store.select({ kind: 'loop', at: hit.at }); this.drag = { kind: 'pan', last: px }; return; }
@@ -410,6 +420,29 @@ export class Editor2D {
       case 'wall':
         this.placeWallPoint((this.cursor ?? this.snapFor(p)).p);
         return;
+      case 'arc': {
+        if (this.arcEnds.length < 2) {
+          const q = (this.cursor ?? this.snapFor(p)).p;
+          if (this.arcEnds.length === 1 && dist(q, this.arcEnds[0]) < 0.05) return;
+          this.arcEnds.push(q);
+        } else {
+          const [a, b] = this.arcEnds;
+          const sagitta = this.arcBow(a, b, p);
+          const props = { thickness: this.opts.thickness, kind: this.opts.wallKind, sagitta };
+          this.store.edit((l) => addWall(l, a, b, props, this.tol));
+          this.arcEnds = [];
+        }
+        this.status();
+        this.render();
+        return;
+      }
+      case 'circle': {
+        const q = (this.cursor ?? this.snapFor(p)).p;
+        if (this.rectFrom) { this.commitCircle(this.rectFrom, p); return; }
+        this.rectFrom = q;
+        this.drag = { kind: 'circle', from: q, moved: false, start: px };
+        return;
+      }
       case 'rect': {
         const q = (this.cursor ?? this.snapFor(p)).p;
         if (this.rectFrom) { this.commitRect(this.rectFrom, q); return; }
@@ -465,7 +498,7 @@ export class Editor2D {
         return;
       }
       if ('start' in d && !d.moved && Math.hypot(px[0] - d.start[0], px[1] - d.start[1]) < DRAG_PX) return;
-      if ('moved' in d && !d.moved) { d.moved = true; if (d.kind !== 'rect') this.store.begin(); }
+      if ('moved' in d && !d.moved) { d.moved = true; if (d.kind !== 'rect' && d.kind !== 'circle') this.store.begin(); }
       switch (d.kind) {
         case 'node': {
           const s = this.snapFor(p, new Set([d.id]));
@@ -494,6 +527,24 @@ export class Editor2D {
           this.cursor = this.snapFor(p);
           this.renderOverlay();
           return;
+        case 'circle':
+          this.cursor = { p, kind: 'free', guides: [] };
+          this.renderOverlay();
+          return;
+        case 'curve': {
+          const level = this.store.level;
+          const w = wallById(level, d.id);
+          if (!w) return;
+          const e = wallEnds(level, w);
+          const mid = scale(add(e.a, e.b), 0.5);
+          let bow = dot(sub(p, mid), [-e.dir[1], e.dir[0]]);
+          if (!this.altKey) bow = Math.abs(bow) < this.tol ? 0 : Math.round(bow * 100) / 100;
+          this.store.live((l) => {
+            const x = wallById(l, d.id)!;
+            if (bow) x.sagitta = bow; else delete x.sagitta;
+          });
+          return;
+        }
       }
     }
     // no drag: hover and previews
@@ -502,7 +553,7 @@ export class Editor2D {
       if (JSON.stringify(h) !== JSON.stringify(this.hover)) { this.hover = h; this.render(); }
       return;
     }
-    if (this.tool === 'wall' || this.tool === 'rect' || this.tool === 'calibrate') this.cursor = this.snapFor(p);
+    if (this.tool === 'wall' || this.tool === 'rect' || this.tool === 'calibrate' || this.tool === 'circle' || (this.tool === 'arc' && this.arcEnds.length < 2)) this.cursor = this.snapFor(p);
     else this.cursor = null;
     this.renderOverlay();
   }
@@ -521,6 +572,15 @@ export class Editor2D {
       case 'opening': case 'tag':
         if (d.moved) this.store.end();
         break;
+      case 'curve':
+        if (d.moved) this.store.end();
+        else {
+          this.store.select({ kind: 'wall', id: d.id });
+        }
+        break;
+      case 'circle':
+        if (d.moved && Math.hypot(px[0] - d.start[0], px[1] - d.start[1]) > 12) this.commitCircle(d.from, p);
+        break;
       case 'rect':
         if (d.moved && Math.hypot(px[0] - d.start[0], px[1] - d.start[1]) > 12) this.commitRect(d.from, this.snapFor(p).p);
         break;
@@ -530,6 +590,30 @@ export class Editor2D {
     }
     this.cursor = null;
     this.render();
+  }
+
+  /** The bow for the arc tool: through the cursor, or (Alt held) straight out from the middle. */
+  private arcBow(a: Vec2, b: Vec2, p: Vec2): number {
+    const s = sagittaThrough(a, b, p);
+    return Math.abs(s) < this.tol ? 0 : Math.round(s * 1000) / 1000;
+  }
+
+  private commitCircle(c: Vec2, p: Vec2): void {
+    this.rectFrom = null;
+    const r = Math.round(dist(c, p) * 100) / 100;
+    const props = { thickness: this.opts.thickness, kind: this.opts.wallKind };
+    this.store.edit((l) => addCircle(l, c, r, props, this.tol));
+    this.render();
+  }
+
+  /** The bow handle of the selected wall, when the pointer is on it. */
+  private curveHandleAt(px: [number, number]): string | null {
+    const s = this.store.selection;
+    if (!s || s.kind !== 'wall') return null;
+    const g = this.derive().idx.walls.get(s.id);
+    if (!g || g.wall.kind === 'virtual') return null;
+    const h = this.toScreen(fromWallLocal(g, g.length / 2, 0));
+    return Math.hypot(h.x - px[0], h.y - px[1]) <= 9 ? s.id : null;
   }
 
   private commitRect(a: Vec2, b: Vec2): void {
@@ -572,9 +656,9 @@ export class Editor2D {
     for (const o of level.openings) {
       const g = idx.walls.get(o.wall);
       if (!g) continue;
-      const c = openingCentre(level, o);
-      const v = sub(p, c);
-      const along = Math.abs(dot(v, g.dir)), across = Math.abs(dot(v, g.left));
+      const f = wallFrame(g, o.offset);
+      const v = sub(p, f.p);
+      const along = Math.abs(dot(v, f.t)), across = Math.abs(dot(v, f.n));
       if (along <= o.width / 2 && across <= g.wall.thickness / 2 + tol) consider({ kind: 'opening', id: o.id }, across * 0.5);
     }
     if (best) return (best as { hit: Hit }).hit;
@@ -586,7 +670,7 @@ export class Editor2D {
     for (const w of level.walls) {
       const g = idx.walls.get(w.id);
       if (!g) continue;
-      const { d } = closestOnSegment(p, g.a, g.b);
+      const { d } = wallDistance(g, p);
       if (d <= w.thickness / 2 + tol * 0.6) consider({ kind: 'wall', id: w.id }, d);
     }
     if (best) return (best as { hit: Hit }).hit;
@@ -601,9 +685,9 @@ export class Editor2D {
     let best: { wallId: string; u: number; side: 'left' | 'right'; d: number } | null = null;
     for (const [id, g] of idx.walls) {
       if (g.wall.kind === 'virtual') continue;
-      const { point, d } = closestOnSegment(p, g.a, g.b);
+      const { d, u } = wallDistance(g, p);
       if (d > g.wall.thickness / 2 + this.tol * 1.5) continue;
-      if (!best || d < best.d) best = { wallId: id, u: dot(sub(point, g.a), g.dir), side: dot(sub(p, g.a), g.left) >= 0 ? 'left' : 'right', d };
+      if (!best || d < best.d) best = { wallId: id, u, side: toWallLocal(g, p)[1] >= 0 ? 'left' : 'right', d };
     }
     return best;
   }
@@ -611,7 +695,7 @@ export class Editor2D {
   private projectOnWall(wallId: string, p: Vec2): { wallId: string; u: number } | null {
     const g = this.derive().idx.walls.get(wallId);
     if (!g) return null;
-    return { wallId, u: Math.min(Math.max(dot(sub(p, g.a), g.dir), 0), g.length) };
+    return { wallId, u: Math.min(Math.max(wallParam(g, p), 0), g.length) };
   }
 
   // ---------------------------------------------------------------- drawing
@@ -649,7 +733,7 @@ export class Editor2D {
       if (!g) continue;
       const lowConf = w.confidence !== undefined && w.confidence < 0.6;
       if (w.kind === 'virtual') {
-        wallEls.push(el('line', { x1: g.a[0], y1: -g.a[1], x2: g.b[0], y2: -g.b[1], class: 'wall-virtual' }));
+        wallEls.push(el('path', { d: linePath(wallPolyline(g)), class: 'wall-virtual' }));
         continue;
       }
       const pc = pieces.get(w.id);
@@ -674,7 +758,7 @@ export class Editor2D {
         const hu = (o.hinge ?? 'start') === 'start' ? u0 : u1, fu = hu === u0 ? u1 : u0;
         const H = P(hu, side * h), C = P(fu, side * h);
         const width = u1 - u0;
-        const O = add(H, scale(g.left, side * width));
+        const O = add(H, scale(wallFrame(g, hu).n, side * width));
         const sweep = crossZ(sub(O, H), sub(C, H)) > 0 ? 1 : 0;
         openEls.push(el('path', { d: `M${H[0]} ${-H[1]} L${O[0]} ${-O[1]} A${width} ${width} 0 0 ${sweep} ${C[0]} ${-C[1]}`, class: o.kind === 'entry' ? 'door door--entry' : 'door' }));
       } else if (o.kind === 'window') {
@@ -710,7 +794,7 @@ export class Editor2D {
     }));
 
     // nodes (only while editing geometry)
-    const showNodes = this.tool === 'select' || this.tool === 'wall' || this.tool === 'rect';
+    const showNodes = ['select', 'wall', 'arc', 'rect', 'circle'].includes(this.tool);
     L.nodes.replaceChildren(...(showNodes ? level.nodes.map((n) => el('circle', { cx: n.x, cy: -n.y, r: 2.5 * px, class: 'node' })) : []));
 
     this.renderSelection();
@@ -730,15 +814,21 @@ export class Editor2D {
         const fp = footprints.get(hit.id);
         const g = idx.walls.get(hit.id);
         if (fp) out.push(el('path', { d: polyPath(fp.polygon), class: cls }));
-        else if (g) out.push(el('line', { x1: g.a[0], y1: -g.a[1], x2: g.b[0], y2: -g.b[1], class: cls }));
+        else if (g) out.push(el('path', { d: linePath(wallPolyline(g)), class: cls }));
         if (g && cls === 'sel') {
           // length along the wall
           const m = fromWallLocal(g, g.length / 2, g.wall.thickness / 2 + 14 * px);
-          let ang = (-Math.atan2(g.dir[1], g.dir[0]) * 180) / Math.PI;
+          const tm = wallFrame(g, g.length / 2).t;
+          let ang = (-Math.atan2(tm[1], tm[0]) * 180) / Math.PI;
           if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
           const txt = el('text', { class: 'dim', 'text-anchor': 'middle', 'dominant-baseline': 'middle', 'font-size': 11 * px, transform: `translate(${m[0]} ${-m[1]}) rotate(${ang})` });
-          txt.textContent = `${formatNumber(g.length, 2)} m`;
+          txt.textContent = g.arc ? `${formatNumber(g.length, 2)} m · R ${formatNumber(g.arc.radius, 2)}` : `${formatNumber(g.length, 2)} m`;
           out.push(txt);
+          // the bow handle: drag to curve the wall
+          if (g.wall.kind !== 'virtual') {
+            const hpt = fromWallLocal(g, g.length / 2, 0);
+            out.push(el('circle', { cx: hpt[0], cy: -hpt[1], r: 5 * px, class: 'curve-handle' }));
+          }
         }
       } else if (hit.kind === 'opening') {
         const o = level.openings.find((x) => x.id === hit.id);
@@ -791,6 +881,24 @@ export class Editor2D {
       out.push(el('line', { x1: a[0], y1: -a[1], x2: b[0], y2: -b[1], class: 'preview-line' }));
       label(b, `${formatNumber(dist(a, b), 2)} m`);
     }
+    if (this.tool === 'arc' && this.arcEnds.length) {
+      const [a, b] = this.arcEnds;
+      const end = b ?? c?.p;
+      if (end && dist(a, end) > 1e-4) {
+        const bow = b && this.rawCursor ? this.arcBow(a, b, this.rawCursor) : 0;
+        const arc = arcFromSagitta(a, end, bow);
+        const pts: Vec2[] = arc ? Array.from({ length: arcSegments(arc) + 1 }, (_, i) => arcPoint(arc, (arc.length * i) / arcSegments(arc))) : [a, end];
+        out.push(el('path', { d: bandPath(pts, this.opts.thickness / 2), class: 'preview' }));
+        out.push(el('path', { d: linePath(pts), class: 'preview-line' }));
+        label(b ? this.rawCursor ?? end : end, arc ? `${formatNumber(arc.length, 2)} m · R ${formatNumber(arc.radius, 2)}` : `${formatNumber(dist(a, end), 2)} m`);
+      }
+    }
+    if (this.tool === 'circle' && this.rectFrom && c) {
+      const r = dist(this.rectFrom, c.p);
+      out.push(el('circle', { cx: this.rectFrom[0], cy: -this.rectFrom[1], r, class: 'preview preview--rect' }));
+      out.push(el('circle', { cx: this.rectFrom[0], cy: -this.rectFrom[1], r: 3 * px, class: 'snap snap--free' }));
+      label(c.p, `R ${formatNumber(r, 2)} m · ⌀ ${formatNumber(2 * r, 2)} m`);
+    }
     if (this.tool === 'rect' && this.rectFrom && c) {
       const a = this.rectFrom, b = c.p;
       out.push(el('path', { d: polyPath([a, [b[0], a[1]], b, [a[0], b[1]]]), class: 'preview preview--rect' }));
@@ -825,6 +933,22 @@ function el(tag: string, attrs: Record<string, string | number>): SVGElement {
   const e = document.createElementNS(SVGNS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
   return e;
+}
+
+function linePath(pts: Vec2[]): string {
+  return pts.length ? `M${pts.map((p) => `${r4(p[0])} ${r4(-p[1])}`).join('L')}` : '';
+}
+
+/** Outline of a band of half-width h along a polyline. */
+function bandPath(pts: Vec2[], h: number): string {
+  const left: Vec2[] = [], right: Vec2[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const d = norm(sub(b, a)), n: Vec2 = [-d[1] * h, d[0] * h];
+    left.push(add(pts[i], n));
+    right.push(sub(pts[i], n));
+  }
+  return polyPath([...left, ...right.reverse()]);
 }
 
 function polyPath(poly: Vec2[]): string {

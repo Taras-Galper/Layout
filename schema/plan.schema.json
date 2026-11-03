@@ -66,6 +66,10 @@
         "thickness": { "type": "number", "exclusiveMinimum": 0, "maximum": 1.5 },
         "kind": { "enum": ["exterior", "interior", "partition", "structural", "railing", "virtual"] },
         "height": { "type": "number", "exclusiveMinimum": 0 },
+        "sagitta": {
+          "type": "number",
+          "description": "Curved wall: how far its middle bows out from the straight line a→b, metres, positive to the left of a→b. A DXF bulge b converts as sagitta = b × chord / 2."
+        },
         "confidence": { "$ref": "#/$defs/confidence" }
       },
       "additionalProperties": false

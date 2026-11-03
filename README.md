@@ -49,12 +49,16 @@ and the layout: **Plan**, **Split** (plan and 3D side by side) or **3D**.
 |---|---|
 | Select (V) | click to select; drag points, walls (sideways), openings and room names; drag empty space to pan; Delete removes |
 | Wall (W) | click corner to corner; type a length while drawing; double-click, Enter or right-click ends; snaps to points, walls, straight angles and lines through other points (Alt turns snapping off) |
+| Curved wall (A) | click its two ends, then a point on the curve |
 | Room box (R) | four walls around a rectangle |
+| Round room (C) | drag from the centre outwards |
 | Door (D), Window (N), Slider (S), Opening (O) | click a wall; doors open towards the side you click on |
 | Room name (T) | click inside a closed room |
 | Fit (F) | show the whole plan |
 
-Walls that cross or end on another wall join it automatically. Scroll to zoom; middle- or
+Any wall can be curved: select it and drag the dot in its middle, or type its **Curve** in the side
+panel (how far the middle bows out, in cm). Walls that cross or end on another wall join it
+automatically, curved ones included. Scroll to zoom; middle- or
 right-drag (or Space + drag) pans in every tool. Ctrl+Z / Ctrl+Shift+Z undo and redo.
 
 The **side panel** shows the selection's properties (type, thickness, length, widths, sill and top

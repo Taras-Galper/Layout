@@ -58,6 +58,11 @@ export interface Wall {
   thickness: number;
   kind: WallKind;
   height?: number;
+  /**
+   * Curved wall: how far the middle of the wall bows out from the straight line a → b, in metres,
+   * positive to the left of a → b. Missing or 0 for a straight wall.
+   */
+  sagitta?: number;
   confidence?: number;
 }
 

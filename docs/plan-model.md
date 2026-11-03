@@ -27,7 +27,7 @@ Plan
     ├── height        default floor-to-ceiling height of walls on this level (m)
     ├── slabThickness?
     ├── nodes[]       { id, x, y }                       shared wall end points
-    ├── walls[]       { id, a, b, thickness, kind, height?, confidence? }
+    ├── walls[]       { id, a, b, thickness, kind, height?, sagitta?, confidence? }
     ├── openings[]    { id, wall, offset, width, kind, sill?, head?, hinge?, swing?, confidence? }
     └── rooms[]       { id, type, name?, at: [x, y], floor?, confidence? }
 ```
@@ -50,6 +50,12 @@ split into two walls at that point (a T-junction is a node with three walls).
 | `virtual` | invisible room separator (open-plan kitchen / living); no geometry, no collision |
 
 `height` overrides the level height for this wall.
+
+**Curved walls**: `sagitta` is how far the middle of the wall bows out from the straight line between
+its two nodes, in metres, positive to the left of `a → b`. The wall is then a circular arc through both
+nodes. Half the distance between the nodes gives a half circle; more gives a larger arc. A round room
+is two half-circle walls between the same two nodes, bowing to opposite sides. A DXF polyline bulge
+`b` converts as `sagitta = b × chord / 2`. Opening `offset` and `width` are measured along the arc.
 
 ### Openings
 
