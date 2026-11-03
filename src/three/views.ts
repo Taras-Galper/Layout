@@ -68,13 +68,16 @@ export class Views {
     return this._mode;
   }
 
-  setShell(shell: ShellBuild, activeLevel = 0): void {
+  /** Show a new shell. `keepCamera` is for rebuilds while editing: the view stays where it is, walking included. */
+  setShell(shell: ShellBuild, activeLevel = 0, keepCamera = false): void {
     this.shell = shell;
     this.activeLevel = Math.min(activeLevel, shell.levels.length - 1);
-    if (this._mode === 'walk') this.setMode('cutaway');
+    if (!keepCamera && this._mode === 'walk') this.setMode('cutaway');
     this.applyCeilings();
     this.applyLevelVisibility();
-    this.frameAll(true);
+    // walls are new objects: start them at the height the cutaway wants, without animating
+    this.updateWalls(1e3);
+    if (!keepCamera) this.frameAll(true);
   }
 
   setActiveLevel(i: number): void {
@@ -98,8 +101,10 @@ export class Views {
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const r = Math.max(4, 0.5 * Math.hypot(size.x, size.z));
-    const fov = THREE.MathUtils.degToRad(this.viewer.camera.fov);
-    const d = (r / Math.sin(fov / 2)) * 1.05;
+    const cam = this.viewer.camera;
+    const vfov = THREE.MathUtils.degToRad(cam.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * cam.aspect);
+    const d = (r / Math.sin(Math.min(vfov, hfov) / 2)) * 1.05;
     const target = new THREE.Vector3(center.x, (this.level?.level.elevation ?? 0), center.z);
     const pos = target.clone().add(new THREE.Vector3(-0.55, 0.78, 0.62).normalize().multiplyScalar(d));
     this.orbit.minDistance = 2;

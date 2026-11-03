@@ -4,9 +4,8 @@
 import * as THREE from 'three';
 import type { Level, Plan, RoomTag, Vec2 } from '../model/plan';
 import { DEFAULT_SLAB } from '../model/plan';
-import { clipPolygon, polygonArea } from '../model/geometry';
 import {
-  type Room, type WallGeom, detectRooms, fromWallLocal, indexLevel, openingSpans, wallFootprints,
+  type Room, type WallGeom, detectRooms, fromWallLocal, indexLevel, wallFootprints, wallPieces,
 } from '../model/topology';
 import { MATERIALS, floorMaterial, hasCeiling } from './materials';
 import { flatPolygon, PrismBuilder } from './prism';
@@ -70,26 +69,12 @@ function buildLevel(level: Level): LevelBuild {
     const wallGroup = new THREE.Group();
     wallGroup.name = `wall:${id}`;
     const pb = new PrismBuilder();
-    const toU = (p: Vec2) => (p[0] - g.a[0]) * g.dir[0] + (p[1] - g.a[1]) * g.dir[1];
-    const slab = (u0: number, u1: number) =>
-      clipPolygon(clipPolygon(fp.polygon, (p) => toU(p) - u0), (p) => u1 - toU(p));
-
-    const spans = openingSpans(idx, id).filter((s) => s.u1 - s.u0 > 0.01);
-    // solid stretches between openings (the first and last include the joints)
-    let cursor = -Infinity;
-    const solids: [number, number][] = [];
-    for (const s of spans) { solids.push([cursor, s.u0]); cursor = s.u1; }
-    solids.push([cursor, Infinity]);
-    for (const [u0, u1] of solids) {
-      const poly = slab(u0, u1);
-      if (poly.length >= 3 && Math.abs(polygonArea(poly)) > 1e-6) {
-        pb.addPrism(poly, 0, H, { capMat: 1 });
-        blockers.push(poly);
-      }
+    const { solids, gaps } = wallPieces(idx, fp);
+    for (const poly of solids) {
+      pb.addPrism(poly, 0, H, { capMat: 1 });
+      blockers.push(poly);
     }
-    for (const s of spans) {
-      const poly = slab(s.u0, s.u1);
-      if (poly.length < 3) continue;
+    for (const { span: s, polygon: poly } of gaps) {
       if (s.sill > 0.005) pb.addPrism(poly, 0, s.sill);
       if (s.head < H - 0.005) pb.addPrism(poly, s.head, H, { capMat: 1 });
       if (s.sill > 0.05) blockers.push(poly); // windows block walking

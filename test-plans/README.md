@@ -35,4 +35,8 @@ against, which page of a PDF is the plan, what makes it hard.
 
 | File | Notes |
 |---|---|
-| `pdf-dira.pdf` | |
+| `pdf-dira.pdf` | architect's vector plan, 1:50, one page, walls hatched (the Flat13 flat) |
+| `pdf-k20-kaplansky.pdf` | developer sales sheet, but the plan inside is a picture (no vector lines); room sizes printed in cm, e.g. 330/320 |
+| `image-5-rooms-furnished.jpg` | marketing plan with furniture drawn in, room sizes in cm (265/364) |
+| `image-angled-apartment-g.jpg` | architect sales plan with angled walls and coloured floors, dimensions on the walls |
+| `image-tzafririm-small.jpg` | small, low-resolution plan on a marketing sheet: the hard case |

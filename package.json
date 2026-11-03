@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "n8ao": "^2.0.1",
+    "pdfjs-dist": "^6.5.438",
     "postprocessing": "^6.39.6",
     "three": "^0.187.0"
   },

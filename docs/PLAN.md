@@ -48,15 +48,18 @@ Nothing downstream knows where a plan came from.
 Licensing note: most open floor-plan detection models are trained on CubiCasa5K (non-commercial).
 Start with classical computer vision + Claude; train our own model later on plans corrected in our editor.
 
-## 2D editor (milestone 2)
+## 2D editor (milestone 2, done)
 
 Drawing underneath at the right scale; walls as draggable centre-lines with snapping; add / delete /
 split walls; doors and windows slide along walls with width handles and swing flip; rooms recalculate
 on every change; low-confidence items highlighted; undo / redo; draw-from-scratch mode; split 2D | 3D
-view with live updates. Built before the importers: every importer produces a draft the editor fixes,
+view with live updates. Built: tracing over an image or PDF with two-point scale calibration,
+wall / room-box / door / window / slider / opening / room-name tools, snapping, typed lengths,
+properties panel, autosave. Not yet: pinch zoom on touch screens, rotating the drawing, multi-level
+editing UI, unit settings (m / cm / ft). Built before the importers: every importer produces a draft the editor fixes,
 and the editor makes the "truth" files for the test set.
 
-## 3D shell (milestone 1)
+## 3D shell (milestone 1, done)
 
 - Walls from centre-lines with clean mitred joints; openings built by splitting the wall into pieces
   below the sill and above the head (no CSG).
@@ -81,14 +84,14 @@ doors and windows found, rooms and labels correct, scale error, and minutes of m
 
 ## Milestones
 
-| # | Milestone | Demo at the end | Size |
-|---|---|---|---|
-| 1 | Plan model + 3D shell builder | A plan file renders as a walkable, lit 3D shell with cutaway | M |
-| 2 | 2D editor | Draw a flat from scratch and see it live in 3D | L |
-| 3 | DXF + DWG import | CAD files open as editable plans | M |
-| 4 | PDF import, vector and scanned | Developer PDFs open | M |
-| 5 | Image and photo import | A phone photo of a plan becomes a draft | L |
-| 6 | Claude reading and check pass, tuning on the test set | Labels and scale automatic, problem spots highlighted | M |
+| # | Milestone | Demo at the end | Size | Status |
+|---|---|---|---|---|
+| 1 | Plan model + 3D shell builder | A plan file renders as a walkable, lit 3D shell with cutaway | M | done |
+| 2 | 2D editor | Draw a flat from scratch and see it live in 3D | L | done |
+| 3 | DXF + DWG import | CAD files open as editable plans | M | next |
+| 4 | PDF import, vector and scanned | Developer PDFs open | M |  |
+| 5 | Image and photo import | A phone photo of a plan becomes a draft | L |  |
+| 6 | Claude reading and check pass, tuning on the test set | Labels and scale automatic, problem spots highlighted | M |  |
 
 Later: furniture catalog and placement, materials and moods, saving and sharing, accounts and hosting,
 AI / path-traced final renders, multi-level buildings and private houses, localisation.

@@ -184,7 +184,7 @@ export class Viewer {
     return { w: Math.max(1, this.host.clientWidth), h: Math.max(1, this.host.clientHeight) };
   }
 
-  private resize(): void {
+  resize(): void {
     const { w, h } = this.size();
     this.renderer.setSize(w, h, false);
     this.renderer.domElement.style.width = `${w}px`;
@@ -213,6 +213,8 @@ export class Viewer {
     this.clock.update();
     const dt = Math.min(0.1, this.clock.getDelta());
     for (const fn of this.updaters) fn(dt);
+    // nothing to draw while the 3D pane is hidden (plan-only layout)
+    if (this.host.clientWidth === 0 || this.host.clientHeight === 0) return;
     this.updateEnvironment(dt);
     this.renderer.info.reset();
     if (this.composer) this.composer.render(dt);

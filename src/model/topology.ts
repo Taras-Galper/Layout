@@ -4,7 +4,7 @@ import {
   openingHead, openingSill, wallHeight,
 } from './plan';
 import {
-  add, closestOnSegment, dist, dot, lineIntersect, norm, perpLeft, pointInPolygon,
+  add, clipPolygon, closestOnSegment, dist, dot, lineIntersect, norm, perpLeft, pointInPolygon,
   polygonArea, polygonCentroid, scale, sub,
 } from './geometry';
 
@@ -282,3 +282,32 @@ export function levelBounds(level: Level): { min: Vec2; max: Vec2; center: Vec2;
   return { min, max, center: scale(add(min, max), 0.5), size: sub(max, min) };
 }
 
+
+// ---------------------------------------------------------------- wall pieces
+
+export interface WallPieces {
+  /** Full-height stretches of the wall outline between openings (joints included at the ends). */
+  solids: Vec2[][];
+  /** The wall outline across each opening. */
+  gaps: { span: ReturnType<typeof openingSpans>[number]; polygon: Vec2[] }[];
+}
+
+/** Cuts a wall outline at its openings. Used by the 3D builder and the 2D editor alike. */
+export function wallPieces(idx: LevelIndex, fp: WallFootprint): WallPieces {
+  const g = fp.geom;
+  const toU = (p: Vec2) => (p[0] - g.a[0]) * g.dir[0] + (p[1] - g.a[1]) * g.dir[1];
+  const slab = (u0: number, u1: number) => clipPolygon(clipPolygon(fp.polygon, (p) => toU(p) - u0), (p) => u1 - toU(p));
+  const spans = openingSpans(idx, g.wall.id).filter((s) => s.u1 - s.u0 > 0.01);
+  const solids: Vec2[][] = [];
+  let cursor = -Infinity;
+  const ranges: [number, number][] = [];
+  for (const s of spans) { ranges.push([cursor, s.u0]); cursor = Math.max(cursor, s.u1); }
+  ranges.push([cursor, Infinity]);
+  for (const [u0, u1] of ranges) {
+    if (u1 - u0 < 1e-4) continue;
+    const poly = slab(u0, u1);
+    if (poly.length >= 3 && Math.abs(polygonArea(poly)) > 1e-6) solids.push(poly);
+  }
+  const gaps = spans.map((span) => ({ span, polygon: slab(span.u0, span.u1) })).filter((x) => x.polygon.length >= 3);
+  return { solids, gaps };
+}
